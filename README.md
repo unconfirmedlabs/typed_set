@@ -1,89 +1,123 @@
 # typed_set
 
-One bounded set of `T` per key type, stored as a dynamic field on any
-object's `UID`. A protocol-agnostic primitive in the spirit of
-`platform_link`: it knows nothing about parties or any other consumer, so
-anything in the ecosystem can depend on it. A consumer package defines a
-unit key type (`TagsKey`, `GenresKey`, …) and gets the mechanics every
-small set extension needs — init-on-add, duplicate and capacity checks,
-removal that reclaims the field once the set empties, and a no-op clear.
+One bounded set of `T` per key type, stored as a dynamic field on any object's `UID`.
 
-What may *enter* the set (length limits, vocabulary proofs) and which
-events a change announces stay with the consumer: it validates before
-calling `add` and emits after.
+You define a key type. `typed_set` does the rest: creates the set on the first
+`add`, rejects duplicates, enforces a cap, and deletes the field when the last
+item leaves. It knows nothing about parties, music, or whatever your package
+does, and it depends on nothing but the Sui framework, so anything in the
+ecosystem can build on it.
 
-## What it stores
+## Using it
 
-- Key: the consumer's own key type `K` (`copy + drop + store`), passed by
-  value — one set per key type per `UID`, so two consumers never collide
-  on the same object.
-- Value: a bare `VecSet<T>` (`T: copy + drop + store`) — no wrapper
-  struct, so a stored set is exactly a `VecSet<T>` and there is nothing to
-  migrate if the consumer evolves.
-- Capacity is not stored: `max` is an argument to `add`, checked on every
-  insert, so the set holds at most `max` items under the consumer's
-  current policy.
-- Reclamation: `remove` drops the whole dynamic field when the last item
-  leaves — an empty set is indistinguishable from none, and the storage
-  rebate goes back to the payer. `exists` is never true for an empty set.
+Add the dependency:
+
+```toml
+[dependencies]
+typed_set = { git = "https://github.com/unconfirmedlabs/typed_set.git" }
+```
+
+Then define a key and wrap the calls in whatever rules your package needs:
+
+```move
+module my_package::host_tags;
+
+use std::string::String;
+use sui::event;
+use typed_set::typed_set;
+
+const MAX_TAGS: u64 = 16;
+const ETagTooLong: u64 = 0;
+
+/// The key. Namespaced by this package, so nobody else writes to this set.
+public struct TagsKey() has copy, drop, store;
+
+public struct TagAdded has copy, drop { host: ID, tag: String }
+
+public fun add_tag(host: &mut Host, tag: String) {
+    assert!(tag.length() <= 32, ETagTooLong);                 // validate first
+    typed_set::add(&mut host.id, TagsKey(), tag, MAX_TAGS);
+    event::emit(TagAdded { host: object::id(host), tag });    // announce after
+}
+
+public fun tags(host: &Host): vector<String> {
+    typed_set::keys<TagsKey, String>(&host.id, TagsKey())
+}
+```
+
+Vocabulary checks, length limits, and events stay in your module. This package
+only stores things.
+
+## What gets stored
+
+Under your key sits a bare `VecSet<T>`. There is no wrapper struct, so if you
+outgrow this package you can reach the field with `dynamic_field::borrow` and
+nothing needs migrating.
+
+Three things worth knowing:
+
+**One set per key type per object.** Your key type carries your package address,
+so two packages tagging the same object never collide.
+
+**The cap is an argument, not state.** You pass `max` on every `add`. Change the
+constant whenever you like; no migration, and items already in the set stay put.
+
+**Empty means gone.** `remove` deletes the whole dynamic field when the last item
+leaves, so the storage rebate returns to the payer and `exists` reports false. A
+stored empty set cannot happen.
 
 ## API
 
-All functions take the host object's `UID` directly; authorization is the
-consumer's concern (the `party_*` extensions gate with `PartyAdminCap`
-through `party::uid_mut(cap)`).
+Every function takes the host object's `UID` directly. Authorization is yours to
+enforce before you call: the `party_*` extensions take a `&PartyAdminCap` and go
+through `party::uid_mut(cap)`.
 
 ### Writes
 
 | Function | Description | Aborts |
 |---|---|---|
-| `add<K, T>(&mut uid, key, item, max)` | Add `item`, creating the set on first use | `EDuplicateItem` (0) if already present; `EMaxItemsExceeded` (2) when the set already holds `max` items |
-| `remove<K, T>(&mut uid, key, item)` | Remove `item`; drops the field once the set empties | `EItemNotPresent` (1) when the set or the item is absent |
-| `clear<K, T>(&mut uid, key)` | Remove the whole set | — (no-op when absent) |
+| `add<K, T>(&mut uid, key, item, max)` | Adds `item`, creating the set on first use | `EDuplicateItem` if `item` is already there, `EMaxItemsExceeded` if the set holds `max` items |
+| `remove<K, T>(&mut uid, key, item)` | Removes `item`, dropping the field once the set empties | `EItemNotPresent` if the set or the item is missing |
+| `clear<K, T>(&mut uid, key)` | Removes the whole set | Nothing. No-op when absent |
 
-### Views
+### Reads
 
 | Function | Returns |
 |---|---|
-| `exists<K>(&uid, key)` | Whether a set is stored — never true for an empty set |
+| `exists<K>(&uid, key)` | Whether a set is stored. False for an empty one, which cannot exist |
 | `contains<K, T>(&uid, key, &item)` | Whether `item` is in the set |
-| `keys<K, T>(&uid, key)` | The items in insertion order (empty vector when absent) |
+| `keys<K, T>(&uid, key)` | The items in insertion order, or an empty vector when absent |
 
-## Events
-
-None — this primitive is storage only. Consumers emit their own typed
-events after the mutation (`party_genre` emits `GenreAddedEvent` /
-`GenreRemovedEvent` / `GenresClearedEvent`).
+Keys are `copy + drop + store` and pass by value. Items are `copy + drop +
+store` too.
 
 ## Errors
 
 | Code | Constant | Condition |
 |---|---|---|
 | 0 | `EDuplicateItem` | `add` with an item already in the set |
-| 1 | `EItemNotPresent` | `remove` with no set stored, or the item absent |
+| 1 | `EItemNotPresent` | `remove` with the item missing, or with no set at all |
 | 2 | `EMaxItemsExceeded` | `add` when the set already holds `max` items |
 
-These abort at `location = typed_set::typed_set`; consumers do not
-re-declare them.
+Aborts carry `location = typed_set::typed_set`, so write your tests against this
+package rather than re-declaring the constants in yours:
+
+```move
+#[test, expected_failure(abort_code = 0, location = typed_set::typed_set)]
+fun add_duplicate_aborts() { /* … */ }
+```
+
+## Events
+
+None. Emit your own after the mutation, where you know what the change means.
+`party_genre`, for one, emits `GenreAddedEvent`, `GenreRemovedEvent`, and
+`GenresClearedEvent`.
 
 ## Dependencies
 
-None beyond the Sui framework (`sui::dynamic_field`, `sui::vec_set`) —
-`Move.toml` declares no `[dependencies]` section.
+`sui::dynamic_field` and `sui::vec_set`. `Move.toml` declares no
+`[dependencies]` section at all.
 
-## Integrator notes
+## Built on it
 
-- The consumer recipe: define a unit key type (`copy + drop + store`),
-  validate what may enter the set (length limits, vocabulary proofs)
-  *before* calling `add`, pass your capacity constant as `max` on every
-  `add`, and emit your own typed events *after* the mutation. Gate writes
-  yourself — the extensions take `&PartyAdminCap` and go through
-  `party::uid_mut(cap)` before touching the set.
-- Key types are namespaced by the defining package, so consumers never
-  collide on the same `UID`. `VecSet` preserves insertion order, so
-  `keys` is a stable display order.
-- `max` is per-call, not stored: raising or lowering a capacity needs no
-  migration, and items already in the set are unaffected.
-- Built on it: `party_genre`, `party_roles`, `party_tags`. Their tests
-  assert these abort codes at `location = typed_set::typed_set`, and
-  their READMEs list them as primitive-sourced rather than local errors.
+`party_genre`, `party_roles`, and `party_tags`.
