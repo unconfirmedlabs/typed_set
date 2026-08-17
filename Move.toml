@@ -1,0 +1,10 @@
+[package]
+name = "typed_set"
+edition = "2024"
+license = "Apache 2.0"
+authors = ["Miso Labs, Inc. (build@miso.network)"]
+
+# A protocol-agnostic primitive: one bounded set of T per key type, stored as a
+# dynamic field on any object's UID. Like platform_link, it touches nothing but
+# the Sui framework — no miso, no party — so anything in the ecosystem can
+# depend on it.
