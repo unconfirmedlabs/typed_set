@@ -8,6 +8,15 @@ item leaves. It knows nothing about parties, music, or whatever your package
 does, and it depends on nothing but the Sui framework, so anything in the
 ecosystem can build on it.
 
+## Published packages
+
+Both deployments are immutable.
+
+| Network | Package ID | Transaction digest |
+|---|---|---|
+| Mainnet | `0x3a8db4338b58e7967347d233ba0bb1fd92092b782a55f561f69084e787a280be` | `FuvjQDfvRykM8khSGs16dFW9e3F8dNJQwFGu2mxjSdfn` |
+| Testnet | `0x75550cb9772581d73b3585f6ac6e9af689bcf13b6a682883143f38a1edd8dc14` | `FGZRni96GzKyzKqPn6tq4mWtjaBhZywdP8VK4F37bFm9` |
+
 ## Using it
 
 Add the dependency:
