@@ -15,11 +15,9 @@ public struct FooKey() has copy, drop, store;
 fun add_contains_keys_remove_clear() {
     let ctx = &mut tx_context::dummy();
     let mut uid = object::new(ctx);
-
     assert!(!set::exists<FooKey>(&uid, FooKey()));
     assert!(set::keys<FooKey, u64>(&uid, FooKey()).is_empty());
     assert!(!set::contains<FooKey, u64>(&uid, FooKey(), &1));
-
     set::add(&mut uid, FooKey(), 1u64, 3);
     set::add(&mut uid, FooKey(), 2u64, 3);
     assert!(set::exists<FooKey>(&uid, FooKey()));
@@ -27,15 +25,12 @@ fun add_contains_keys_remove_clear() {
     assert!(!set::contains<FooKey, u64>(&uid, FooKey(), &9));
     // Insertion order is preserved.
     assert_eq!(set::keys<FooKey, u64>(&uid, FooKey()), vector[1, 2]);
-
     set::remove(&mut uid, FooKey(), 1u64);
     assert!(!set::contains<FooKey, u64>(&uid, FooKey(), &1));
     assert_eq!(set::keys<FooKey, u64>(&uid, FooKey()).length(), 1);
-
     set::clear<FooKey, u64>(&mut uid, FooKey());
     assert!(!set::exists<FooKey>(&uid, FooKey()));
     set::clear<FooKey, u64>(&mut uid, FooKey()); // absent — no-op
-
     uid.delete();
 }
 
@@ -43,12 +38,10 @@ fun add_contains_keys_remove_clear() {
 fun remove_drops_the_field_when_emptied() {
     let ctx = &mut tx_context::dummy();
     let mut uid = object::new(ctx);
-
     set::add(&mut uid, FooKey(), 1u64, 3);
     set::remove(&mut uid, FooKey(), 1u64);
     // The last removal reclaims the field: no empty set lingers.
     assert!(!set::exists<FooKey>(&uid, FooKey()));
-
     uid.delete();
 }
 
