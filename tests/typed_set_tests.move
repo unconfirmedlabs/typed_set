@@ -35,7 +35,6 @@ fun add_contains_keys_remove_clear() {
     set::clear<FooKey, u64>(&mut uid, FooKey());
     assert!(!set::exists<FooKey>(&uid, FooKey()));
     set::clear<FooKey, u64>(&mut uid, FooKey()); // absent — no-op
-
     uid.delete();
 }
 
@@ -48,7 +47,6 @@ fun remove_drops_the_field_when_emptied() {
     set::remove(&mut uid, FooKey(), 1u64);
     // The last removal reclaims the field: no empty set lingers.
     assert!(!set::exists<FooKey>(&uid, FooKey()));
-
     uid.delete();
 }
 
